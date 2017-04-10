@@ -3,6 +3,7 @@ from arcpy import mapping
 import json
 import os
 import sys
+import argparse
 
 #Test values
 # mapfile = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tests/fixtures/webmap.json")
@@ -12,81 +13,45 @@ template = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tests/templ
 
 
 class MXDConvert:
-    def __init__(self, json, layout, format):
-        self.webmap = json
+    def __init__(self, media_dir, username, layout, format):
+        self.media_dir = media_dir
+        self.username = username
         self.layout = layout
         self.format = format
+        self.webmap = os.path.join(os.path.join(media_dir, username), "prints/webmap.json")
         pass
 
     def process_template(self):
+        try:
+            wm = open(self.webmap, 'r').read()
+            result = mapping.ConvertWebMapToMapDocument(wm, template)
+            mxd = result.mapDocument
 
-        result = mapping.ConvertWebMapToMapDocument(self.webmap, template)
-        mxd = result.mapDocument
-
-        outfile = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output/WebMapMXD.pdf")
-        mapping.ExportToPDF(mxd, outfile)
-        out_bytes = open(outfile, 'rb')
-        return out_bytes.read()
+            outfile = os.path.join(os.path.join(self.media_dir, self.username), "prints/GISViewer.pdf")
+            if os.path.exists(outfile):
+                os.remove(outfile)
+            mapping.ExportToPDF(mxd, outfile)
+            sys.stdout.write(outfile)
+            return
+        except Exception as e:
+            sys.stdout.write(e)
 
 if __name__ == "__main__":
-    webmap = sys.argv[1]
-    layout = sys.argv[2]
-    format = sys.argv[3]
-    conv = MXDConvert(webmap, layout, format)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-media_dir', help='this media root for the django project')
+    parser.add_argument('-username', help='the username retrieved from the request object')
+    parser.add_argument('-layout', help='this will contain the layout chosen')
+    parser.add_argument('-format', help='this is the file format of the print')
+    args = parser.parse_args()
+
+    if args.media_dir is not None:
+        media_dir = args.media_dir
+    if args.username is not None:
+        username = args.username
+    if args.layout is not None:
+        layout = args.layout
+    if args.format is not None:
+        format = args.format
+
+    conv = MXDConvert(media_dir, username, layout, format)
     print(conv.process_template())
-
-"""
-This is the django view to use for this tool
-
-
-@api_view(['POST'])
-# @renderer_classes((JSONPRenderer,))
-@authentication_classes((AllowAny,))
-@ensure_csrf_cookie
-def print_mxd(request, format=None):
-    v = system_paths()
-    arcmap_path = v["arcmap_path"]
-    mxd_script = v["mxd_script"]
-
-    username = get_username(request)
-    data = request.POST
-    webmap = data['Web_Map_as_JSON']
-    out_folder = os.path.join(MEDIA_ROOT, username)
-    if not os.path.exists(out_folder):
-        os.mkdir(out_folder)
-    os.chdir(out_folder)
-
-    temp_file = open('webmap.json', 'w')
-    temp_file.write(webmap)
-    temp_file.close()
-
-    format = data['Format']
-    layout_template = data['Layout_Template']
-
-    args = [arcmap_path, mxd_script, '-username', username, '-media', MEDIA_ROOT, '-layout', layout_template, '-format', format]
-    proc = subprocess.Popen(args, executable=arcmap_path, stderr=PIPE, stdout=PIPE)
-    out, err = proc.communicate()
-
-    response = Response()
-    # This format must be identical to the DataFile object returned by the esri print examples
-    host = request.META["HTTP_HOST"]
-
-    if host == "127.0.0.1:8080":
-        protocol = "http"
-    else:
-        protocol = "https"
-
-    url = "{}://{}/media/{}/{}".format(protocol, request.META["HTTP_HOST"], username, "layout.pdf")
-
-    response.data = {
-        "messages": [],
-        "results": [{
-            "value": {
-                "url": url
-            },
-            "paramName": "Output_File",
-            "dataType": "GPDataFile"
-        }]
-    }
-    return response
-"""
